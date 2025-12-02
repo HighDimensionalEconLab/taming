@@ -1,0 +1,11 @@
+*.ipynb_checkpoints
+__pycache__
+.vscode/settings.json
+launch.json
+.venv
+.DS_Store
+.vscode
+*.out
+.cache
+.figures
+.results
