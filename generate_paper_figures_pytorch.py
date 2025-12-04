@@ -143,7 +143,7 @@ def main(output_dir="./.figures"):
         res["df_train_initial"],
         y_val="abs_rel_error",
         y_label="err(t)",
-        title="Initial Relative Policy Error $|(k'(t) - k'^*(t))/k'^*(t)|$",
+        title="Initial Relative Policy Error $|(k'(t) - k'_{ref}(t))/k'_{ref}(t)|$",
     )
 
     # Plot solution trajectories (limit to same time range as training)
@@ -154,7 +154,7 @@ def main(output_dir="./.figures"):
         test_data_limited,
         y_val="abs_rel_error",
         y_label="err(t)",
-        title="Solution Relative Policy Error $|(k'(t) - k'^*(t))/k'^*(t)|$",
+        title="Solution Relative Policy Error $|(k'(t) - k'_{ref}(t))/k'_{ref}(t)|$",
     )
 
     plt.tight_layout()

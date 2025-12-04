@@ -1,6 +1,6 @@
 This repository contains code to generate all figures and output for **"Taming the Curse of Dimensionality: Quantitative Economics with Deep Learning" (Jesús Fernández-Villaverde, Galo Nuño, Jesse Perla).**
 
-It will run on all major operating systems and does not require any accelerators (e.g., GPUs).  While you can use any Python environment manager, we recommend [uv](https://github.com/astral-sh/uv#installation), a faster and reproducible alternative to Conda, albeit with incomplete support for challenging binary dependencies.
+It runs on all major operating systems and does not require any accelerators (e.g., GPUs). While you can use any Python environment manager, we recommend [uv](https://github.com/astral-sh/uv#installation), a faster and reproducible alternative to Conda, albeit with incomplete support for challenging binary dependencies.
 
 # Replication Instructions
 
@@ -10,24 +10,25 @@ It will run on all major operating systems and does not require any accelerators
     ```
      - On Windows: `winget install --id=astral-sh.uv  -e` or `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"` 
      - If you have any installation issues, [see the docs](https://docs.astral.sh/uv/getting-started/installation/) for troubleshooting
-2. Synchronize the environment (or install conda requirements file).  If you directly use `uv run python` as below, this step is done automatically.
+2. Synchronize the environment. If you directly use `uv run python` as below, this step is done automatically.
     ```bash
     uv sync
     ```
-3. Ensure the environment is activated, or use `uv run`.  See [here](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) for more details. Then replicate all figures and output
-    ```bash
-    python generate_paper_figures_pytorch.py
-    ```
-    - Or, if you didn't activate the environment, `uv` run can automatically do so
-    ```bash
-    uv run python generate_paper_figures_pytorch.py
-    ```
+3. Run the main script using one of two approaches:
+    - **If you activated the environment:** See [here](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) for activation details, then run:
+        ```bash
+        python generate_paper_figures_pytorch.py
+        ```
+    - **If you didn't activate:** Use `uv run` to automatically activate and then run:
+        ```bash
+        uv run python generate_paper_figures_pytorch.py
+        ```
 
 All output is in the `.figures` directory, including generated figures and a `results.json` that summarizes numerical values used in the paper.
 
-**Note:** On the first run the majority of the time will be spent in the baseline solver using classic methods, but afterwards those results are cached and subsequent runs will be much faster.
+**Note:** On the first run, most time is spent in the baseline solver using classic methods. Afterwards, results are cached and subsequent runs are much faster.
 
-On Linux or macOS you should be able to run the entire replication by executing the following in a terminal.
+**Quick start on Linux or macOS:**
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv run python generate_paper_figures_pytorch.py
@@ -36,9 +37,9 @@ uv run python generate_paper_figures_pytorch.py
 # Additional Instructions
 The following section provides a few variations on the setup and execution.
 ## Activation in VS Code
-To run the code in VS Code, you will want to make sure you activate the Python environment (i.e., the `.venv` or the conda virtual environment)
-   - In VS Code you can activate the default environment with `>Python: Select Interpreter` to be the `.venv` local to the directory
-   - Outside of vscode, a simple, platform specific CLI line will [activate .venv](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) in your terminal.  
+Ensure you activate the Python environment (i.e., the `.venv` or conda virtual environment):
+   - In VS Code, use `>Python: Select Interpreter` to select the local `.venv`
+   - Outside VS Code, a platform-specific command will [activate .venv](https://docs.python.org/3/tutorial/venv.html#creating-virtual-environments) in your terminal.  
 
 
 ## Setup with Conda
@@ -49,7 +50,7 @@ conda create -n taming python=3.13
 conda activate taming
 pip install -r requirements.txt
 ```
-### Self-contained Execution
+## Self-contained Execution
 You can run the code for a particular set of parameters directly on the commandline.  Again, it will cache the baseline results for any particular set of arguments so that subsequent runs are much faster.
 
 The execution with the default arguments (as used in the paper and figures) is simply:
@@ -73,7 +74,7 @@ Finally, to conduct experiments you can import the `stochastic_growth_pytorch` m
 - `stochastic_growth_baseline_pytorch.py`: Solves the stochastic growth model using a standard algorithm (Euler iteration with linear interpolation) to provide a baseline for comparison.
   - This is by far the slowest part of the code as Python (even with Pytorch or JAX) is not especially convenient for the classic numerical methods used in our baseline.
 - `stochastic_growth_pytorch.py`: Solves the stochastic growth model using deep learning as described in the paper.
-  - It calls out to the `stochastic_growth_baseline_pytorch` module to calculate the relative error versus the baseline.
+  - It calls the `stochastic_growth_baseline_pytorch` module to calculate the relative error versus the baseline.
 - `generate_paper_figures_pytorch.py`: Generates all figures and numerical results used in the paper.
-  - It imports and calls `stochastic_growth_pytorch.py` , and contains a repeat of all default parameters for easy reference.
+  - It imports and calls `stochastic_growth_pytorch.py` and contains a summary of all default parameters for easy reference.
   - It saves all output to the `.figures` directory, including a `results.json` file that summarizes numerical results.
