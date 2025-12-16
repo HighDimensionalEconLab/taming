@@ -78,3 +78,9 @@ Finally, to conduct experiments you can import the `stochastic_growth_pytorch` m
 - `generate_paper_figures_pytorch.py`: Generates all figures and numerical results used in the paper.
   - It imports and calls `stochastic_growth_pytorch.py` and contains a summary of all default parameters for easy reference.
   - It saves all output to the `.figures` directory, including a `results.json` file that summarizes numerical results.
+- The `stochastic_growth_pytorch_combined.py` file contains a combined version which solves for the baseline and deep learning solutions in one file, and has an accompanying `generate_paper_figures_pytorch_combined.py` file to generate figures.
+  - As before, it supports CLI arguments such as `python stochastic_growth_pytorch.py --k_0_multiplier=0.9 --seed=53`
+  - The code for the NN solution is identical to the main version.
+  - This version is much faster for calculating the baseline and is self-contained.
+  - However the baseline solution is using native Pytorch Float32 and a few smaller algorithmic changes which lead to lower accuracy.  With very low euler errors, but roughly of the same magnitude as the deep learning solution.
+  - Hence, because relative error calculates may be distorted, so we use the slower but more accurate baseline version for the paper replication.
