@@ -44,15 +44,21 @@ class RegularGridInterpolator(nn.Module):
 class BaselineSolverSettings:
     k_grid_min_mul: float = 0.7
     k_grid_max_mul: float = 1.4
-    z_grid_mul: float = 4.0
+    z_grid_mul: float = 5.0
     num_z_points: int = 31
     num_k_points: int = 100
+    solver: str = "newton"  # "newton" or "lbfgs"
+    # Newton: solves F(x)=0 directly in float64, achieving machine precision
+    newton_max_iter: int = 20
+    newton_tol: float = 1e-10
+    newton_linesearch_max_steps: int = 20
+    # LBFGS: minimizes ||F||^2; included for comparison
     lbfgs_lr: float = 1.0
-    lbfgs_max_iter: int = 300
+    lbfgs_max_iter: int = 1000
     lbfgs_tolerance_grad: float = 1e-14
     lbfgs_tolerance_change: float = 1e-14
     lbfgs_history_size: int = 100
-    lbfgs_max_eval: Optional[int] = 1000
+    lbfgs_max_eval: Optional[int] = 5000
 
 
 @dataclass
@@ -112,8 +118,9 @@ def stochastic_growth(
     assert sigma > 0 and abs(rho) < 1
     # Gaussian quadrature nodes/weights for nu ~ N(0,1)
     nu_nodes_np, nu_weights_np = np.polynomial.hermite.hermgauss(num_quad_nodes)
-    nu_weights = torch.tensor(nu_weights_np / np.sqrt(np.pi)).float()
-    nu_nodes = torch.tensor(nu_nodes_np * np.sqrt(2)).float()
+    # Start in float64 for the baseline Newton solver; converted to float32 afterward
+    nu_weights = torch.tensor(nu_weights_np / np.sqrt(np.pi)).double()
+    nu_nodes = torch.tensor(nu_nodes_np * np.sqrt(2)).double()
 
     # Resource constraint: c(z,k; k') = exp(z)^{1-a} k^a + (1-d)k - k'
     def c(state, k_prime):
@@ -148,12 +155,13 @@ def stochastic_growth(
 
     k_grid_min = base_solver_set.k_grid_min_mul * k_ss
     k_grid_max = min(base_solver_set.k_grid_max_mul * k_ss, k_max_val - 1e-6)
-    k_grid = torch.linspace(k_grid_min, k_grid_max, base_solver_set.num_k_points)
+    k_grid = torch.linspace(k_grid_min, k_grid_max, base_solver_set.num_k_points, dtype=torch.float64)
     z_grid_sd = z_ergodic_sd
     z_grid = torch.linspace(
         -base_solver_set.z_grid_mul * z_grid_sd,
         base_solver_set.z_grid_mul * z_grid_sd,
         base_solver_set.num_z_points,
+        dtype=torch.float64,
     )
 
     k_long, z_long = torch.meshgrid(k_grid, z_grid, indexing="ij")
@@ -171,38 +179,83 @@ def stochastic_growth(
         k_prime_solow(torch.stack([k_long, z_long], dim=-1)).squeeze(-1),
     )
 
-    # Optimize the interpolation by minimizing euler residuals using LBFGS
-    optimizer_baseline = optim.LBFGS(
-        k_prime_baseline.parameters(),
-        lr=base_solver_set.lbfgs_lr,
-        max_iter=base_solver_set.lbfgs_max_iter,
-        max_eval=base_solver_set.lbfgs_max_eval,
-        tolerance_grad=base_solver_set.lbfgs_tolerance_grad,
-        tolerance_change=base_solver_set.lbfgs_tolerance_change,
-        history_size=base_solver_set.lbfgs_history_size,
-        line_search_fn="strong_wolfe",
-    )
+    # k_prime_baseline, nu_nodes, nu_weights, and train_states_baseline are all
+    # float64 at this point, so euler_residuals naturally runs in float64 for
+    # either solver. k_prime_baseline, nu_nodes, and nu_weights are converted
+    # back to float32 afterward.
+    baseline_n_iter = 0
 
-    # LBFGS uses a closure and updates the k_prime_baseline in-place
-    def loss_baseline_closure():
-        optimizer_baseline.zero_grad()
-        resid = euler_residuals(train_states_baseline, k_prime_baseline)
-        loss_val = torch.mean(resid**2)
-        loss_val.backward()
-        return loss_val
+    if base_solver_set.solver == "newton":
+        def _residuals_newton(v_flat):
+            # {"values": ...} substitutes the nn.Parameter named "values" in
+            # RegularGridInterpolator so jacrev can differentiate w.r.t. v_flat
+            # without modifying the module in-place.
+            def kp(xi):
+                return torch.func.functional_call(
+                    k_prime_baseline,
+                    {"values": v_flat.reshape(k_prime_baseline.values.shape)},
+                    xi,
+                )
+            return euler_residuals(train_states_baseline, kp).reshape(-1)
 
-    # Run the optimizer
-    optimizer_baseline.step(loss_baseline_closure)
-    baseline_lbfgs_n_iter = optimizer_baseline.state[optimizer_baseline._params[0]].get(
-        "n_iter", 0
-    )
+        # Newton's method: x_{n+1} = x_n - J(x_n)^{-1} F(x_n)
+        # where J = jacrev(_residuals_newton) is the full (nk*nz) x (nk*nz) Jacobian
+        # and the linear system J dx = F is solved via torch.linalg.solve.
+        # Globalized with backtracking line search: halve step until ||F(x - s*dx)|| < ||F(x)||.
+        x = k_prime_baseline.values.detach().reshape(-1)
+        for _ in range(base_solver_set.newton_max_iter):
+            F_val = _residuals_newton(x)
+            if float(F_val.abs().max()) < base_solver_set.newton_tol:
+                break
+            J = torch.func.jacrev(_residuals_newton)(x)
+            dx = torch.linalg.solve(J, F_val)
+            step = 1.0
+            norm0 = float(F_val.norm())
+            for _ in range(base_solver_set.newton_linesearch_max_steps):
+                if float(_residuals_newton(x - step * dx).norm()) < norm0:
+                    break
+                step *= 0.5
+            x = x - step * dx
+            baseline_n_iter += 1
+        with torch.no_grad():
+            k_prime_baseline.values.copy_(
+                x.reshape(1, 1, base_solver_set.num_k_points, base_solver_set.num_z_points)
+            )
 
-    # Checking the results from the baseline
+    else:  # lbfgs
+        # LBFGS minimizes ||F||² rather than solving F(x)=0 directly, so it can
+        # stall at saddle points where ∇||F||² ≈ 0 but F ≠ 0. This limits
+        # accuracy to ~1e-5 regardless of dtype or iteration count.
+        opt = optim.LBFGS(
+            k_prime_baseline.parameters(),
+            lr=base_solver_set.lbfgs_lr,
+            max_iter=base_solver_set.lbfgs_max_iter,
+            max_eval=base_solver_set.lbfgs_max_eval,
+            tolerance_grad=base_solver_set.lbfgs_tolerance_grad,
+            tolerance_change=base_solver_set.lbfgs_tolerance_change,
+            history_size=base_solver_set.lbfgs_history_size,
+            line_search_fn="strong_wolfe",
+        )
+
+        def closure():
+            opt.zero_grad()
+            resid = euler_residuals(train_states_baseline, k_prime_baseline)
+            loss_val = torch.mean(resid**2)
+            loss_val.backward()
+            return loss_val
+
+        opt.step(closure)
+        baseline_n_iter = opt.state[opt._params[0]].get("n_iter", 0)
+
+    # Evaluate accuracy (still float64) then convert k_prime_baseline, nu_nodes, nu_weights to float32
     with torch.no_grad():
-        baseline_resid = euler_residuals(train_states_baseline, k_prime_baseline)
-        baseline_train_loss = torch.mean(baseline_resid**2).item()
-        baseline_abs_euler_residual_mean = torch.mean(torch.abs(baseline_resid)).item()
-        baseline_abs_euler_residual_max = torch.max(torch.abs(baseline_resid)).item()
+        F_final = euler_residuals(train_states_baseline, k_prime_baseline).reshape(-1)
+        baseline_train_loss = float((F_final**2).mean())
+        baseline_abs_euler_residual_mean = float(F_final.abs().mean())
+        baseline_abs_euler_residual_max = float(F_final.abs().max())
+    k_prime_baseline.float()
+    nu_nodes = nu_nodes.float()
+    nu_weights = nu_weights.float()
 
     # Generate initial conditions for trajectories
     k_0 = torch.tensor(k_0_multiplier * k_ss)
@@ -453,9 +506,10 @@ def stochastic_growth(
             "solution_converged": solution_converged,
             "test_abs_rel_error": df_test["abs_rel_error"].mean(),
             "train_abs_rel_error": df_train_final["abs_rel_error"].mean(),
+            "baseline_solver": base_solver_set.solver,
+            "baseline_n_iter": baseline_n_iter,
             "baseline_train_loss": baseline_train_loss,
             "baseline_abs_euler_residual_max": baseline_abs_euler_residual_max,
-            "baseline_lbfgs_n_iter": baseline_lbfgs_n_iter,
         }
 
         if solution_converged:

@@ -26,7 +26,7 @@ It runs on all major operating systems and does not require any accelerators (e.
 
 All output is in the `.figures` directory, including generated figures and a `results.json` that summarizes numerical values used in the paper.
 
-**Note:** On the first run, most time is spent in the baseline solver using classic methods. Afterwards, results are cached and subsequent runs are much faster.
+**Note:** On the first run, most time is spent in the baseline solver using classic methods. Afterwards, results are cached and subsequent runs are much faster. See the combined version below for an alternative that does not require caching.
 
 **Quick start on Linux or macOS:**
 ```bash
@@ -81,6 +81,7 @@ Finally, to conduct experiments you can import the `stochastic_growth_pytorch` m
 - The `stochastic_growth_pytorch_combined.py` file contains a combined version which solves for the baseline and deep learning solutions in one file, and has an accompanying `generate_paper_figures_pytorch_combined.py` file to generate figures.
   - As before, it supports CLI arguments such as `python stochastic_growth_pytorch_combined.py --k_0_multiplier=0.9 --seed=53`
   - The code for the NN solution is identical to the main version.
-  - This version is much faster for calculating the baseline and is self-contained.
-  - However the baseline solution is using native Pytorch Float32 and a few smaller algorithmic changes which lead to lower accuracy.  With very low euler errors, but roughly of the same magnitude as the deep learning solution.
-  - Hence, because relative error calculates may be distorted, so we use the slower but more accurate baseline version for the paper replication.
+  - The baseline solver supports two algorithms, selectable via `base_solver_set.solver`:
+    - `"newton"` (default): Newton's method in float64 using `torch.func.jacrev` for the Jacobian and `torch.linalg.solve` for the Newton step, globalized with backtracking line search. Achieves machine-precision Euler residuals (~1e-15 mean), matching the scipy-based baseline, in roughly 5 iterations (~1.8s). No caching needed.
+    - `"lbfgs"`: L-BFGS minimizes the sum of squared Euler residuals. Because it is an optimizer rather than a root-finder, it can stall at saddle points where the gradient vanishes but residuals remain nonzero, limiting accuracy to ~1e-5 regardless of iteration count or dtype.
+  - The figures and NN results produced by the combined version are numerically identical to the main version.

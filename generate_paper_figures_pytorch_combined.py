@@ -63,9 +63,6 @@ def main(output_dir="./.figures"):
     base_solver_set = BaselineSolverSettings(
         k_grid_min_mul=0.7,
         k_grid_max_mul=1.4,
-        z_grid_mul=4.0,  # standard deviations around zero
-        num_z_points=31,
-        num_k_points=100,
     )
     data_set = DataSettings(
         train_T=60,
