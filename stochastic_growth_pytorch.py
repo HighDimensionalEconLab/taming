@@ -180,7 +180,7 @@ def stochastic_growth(
     def euler_residuals(state, k_prime):
         c_t = c(state, k_prime).unsqueeze(-1)
         k_tp1 = k_prime(state)
-        z_t = state[:, 1].unsqueeze(-1)
+        z_t = state[..., 1].unsqueeze(-1)
         z_tp1 = rho * z_t + sigma * nu_nodes
         k_tp1_b = k_tp1.expand(-1, len(nu_nodes))
         states_tp1 = torch.stack([k_tp1_b, z_tp1], dim=-1)
@@ -365,13 +365,14 @@ def stochastic_growth(
             k_prime, transversality_state_0, transversality_shocks, sigma
         )
 
-        # Calculate approximate transversality residuals with simulations
-        state_T = transversality_traj[:, -1, :]  # This is (k_{T-1}, z_{T-1})
+        # Approximate transversality check: beta^{T-1} * (k_T/c_{T-1} - k_ss/c_ss) / (k_ss/c_ss)
+        # Normalized deviation from the steady-state k/c ratio, discounted by beta^{T-1}.
+        # Used to reject clearly divergent solutions rather than as a formal TVC proof.
+        state_T = transversality_traj[:, -1, :]  # (k_{T-1}, z_{T-1})
         CS_ss = k_ss / c_ss
         with torch.no_grad():
             c_vals = c(state_T, k_prime)  # c_{T-1}
             kp_vals = k_prime(state_T).squeeze(-1)  # k_T
-            # Check beta^{T-1} * k_T / c_{T-1} to match state timing
             tv_values = (
                 (
                     (beta ** (data_set.transversality_check_T - 1))

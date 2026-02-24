@@ -26,7 +26,10 @@ class RegularGridInterpolator(nn.Module):
     def forward(self, xi):
         original_shape = xi.shape[:-1]
         norm_xi = 2 * (xi - self.mins) / self.ranges - 1
+        # flip (k,z) -> (z,k) since grid_sample treats dim -1 as (x=width, y=height)
         grid = norm_xi.flip(-1).view(1, 1, -1, 2)
+        # border padding clamps out-of-grid queries to boundary values
+        # (grid_sample does not extrapolate)
         out = F.grid_sample(
             self.values,
             grid,
@@ -122,7 +125,7 @@ def stochastic_growth(
     def euler_residuals(state, k_prime):
         c_t = c(state, k_prime).unsqueeze(-1)
         k_tp1 = k_prime(state)
-        z_t = state[:, 1].unsqueeze(-1)
+        z_t = state[..., 1].unsqueeze(-1)
         z_tp1 = rho * z_t + sigma * nu_nodes
         k_tp1_b = k_tp1.expand(-1, len(nu_nodes))
         states_tp1 = torch.stack([k_tp1_b, z_tp1], dim=-1)
@@ -378,12 +381,14 @@ def stochastic_growth(
             k_prime, transversality_state_0, transversality_shocks
         )
 
+        # Approximate transversality check: beta^{T-1} * (k_T/c_{T-1} - k_ss/c_ss) / (k_ss/c_ss)
+        # Normalized deviation from the steady-state k/c ratio, discounted by beta^{T-1}.
+        # Used to reject clearly divergent solutions rather than as a formal TVC proof.
         state_T = transversality_traj[:, -1, :]
         CS_ss = k_ss / c_ss
         with torch.no_grad():
             c_vals = c(state_T, k_prime)
             kp_vals = k_prime(state_T).squeeze(-1)
-            # Normalized deviation from steady-state ratio, discounted by beta^T
             tv_values = (
                 (
                     (beta ** (data_set.transversality_check_T - 1))
