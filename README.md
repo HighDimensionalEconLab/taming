@@ -29,8 +29,13 @@ All output is in the `.figures` directory, including generated figures and a `re
 **Note:** The baseline solution is computed using Newton's method, which converges in a few iterations to machine precision.
 
 **Quick start on Linux or macOS:**
+
+The following will install the required packages, clone the repoistory, and generate all paper figures.
+
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
+git clone https://github.com/HighDimensionalEconLab/taming.git
+cd taming
 uv run python generate_paper_figures_pytorch.py
 ```
 
