@@ -60,7 +60,7 @@ No external data are used in this paper.
   ```bash
   pip install -r requirements.txt
   ```
-
+- A LaTeX installation such as MikTek or TeX Live is required to run the codes for figure generation.
 - [x] The replication package contains one or more programs to install all dependencies and set up the necessary directory structure. (Running `uv sync` or the first usage of `uv run python` from the repository root performs both steps.)
 
 ### Controlled Randomness
